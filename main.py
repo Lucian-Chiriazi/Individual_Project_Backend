@@ -46,6 +46,12 @@ class RecommendationRequest(BaseModel):
 
 @app.post("/recommend")
 def get_recommendations(request: RecommendationRequest):
+    if request.budget < 500 or request.budget > 10000:
+        raise HTTPException(
+            status_code=400,
+            detail="Budget must be between £500 and £10,000"
+        )
+    
     try:
         # Fetch components within budget
         products = list(collection.find({"price": {"$lte": request.budget}}))
