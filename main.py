@@ -76,14 +76,18 @@ def get_recommendations(request: RecommendationRequest):
         
         # Create prompt
         prompt = f"""
-        You are a PC building expert. Based on the following component options grouped by category, choose one component from each group that is compatible with the others and together maximize the total performance **while spending as much of the £{request.budget} budget as possible**.
-        Only choose from the options below:
-
+        You are a PC building expert. Based on the component options below, create only one PC build that is fully compatible and fits within a total budget of £{request.budget}.
+        Prioritize performance and value, and aim to get as close to the full budget as possible without going over. Do not suggest more than one build. Do not provide multiple options.
+        Only choose one component per category.
+        Here are the available components:
         {product_list}
 
         {additional_note}
 
-        Respond with the chosen components, their prices, and the total cost.
+        Return:
+        - Each selected component with its category and price
+        - The total cost
+        - A short explanation (optional)
         """
 
         # Generate recommendation using OpenAI
