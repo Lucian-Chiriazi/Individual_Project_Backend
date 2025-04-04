@@ -35,13 +35,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
-    return {"message": "Connected to MongoDB and OpenAI GPT!"}
-
-# Define request model
-
-
 class RecommendationRequest(BaseModel):
     budget: float
     purpose: str
@@ -69,8 +62,8 @@ def is_compatible(build):
         return False
     if ram.get("ram_type") != motherboard.get("ram_type"):
         return False
-    if psu.get("wattage", 0) < sum([c.get("wattage", 0) for c in build if c.get("wattage")]):
-        return False
+    # if psu.get("wattage", 0) < sum([c.get("wattage", 0) for c in build if c.get("wattage")]):
+        # return False
 
     return True
 
@@ -95,6 +88,11 @@ def generate_best_build(products, budget, purpose, include_os=False, peripherals
     for periph in peripherals:
         optional_items += [p for p in grouped[periph.capitalize()]]
 
+    for category in REQUIRED_CATEGORIES:
+        if not grouped[category]:
+            print(f"Missing category: {category}")
+            return None
+
     limited = {cat: sorted(grouped[cat], key=lambda x: x["performance_score"], reverse=True)[:3] for cat in REQUIRED_CATEGORIES}
 
     combos = product(*[limited[cat] for cat in REQUIRED_CATEGORIES])
@@ -113,6 +111,14 @@ def generate_best_build(products, budget, purpose, include_os=False, peripherals
             best_score = score
             best_build = build
 
+
+    # Debugging - delete after
+    if not best_build:
+        print("No compatible build found. Debug info:")
+        print("Budget:", budget)
+        print("Purpose:", purpose)
+        print("Components per category:", {k: len(v) for k, v in grouped.items()})
+
     return best_build
 
 def format_build(build):
@@ -128,11 +134,13 @@ def call_openai_description(build, purpose, include_peripherals):
     component_lines = [f"{item['type']}: {item['name']} - £{item['price']}" for item in build]
     build_text = "\n".join(component_lines)
 
-    system_message = "You are a helpful assistant that explains PC builds and suggests peripherals."
+    system_message = "You are a helpful PC building assistant. Only provide peripherals if the user explicitly requests them."
 
     user_prompt = f"""
-    Here is a PC build intended for {purpose}. Explain the build in a friendly way to a non-technical user.
-    Also suggest suitable peripherals (keyboard, mouse, monitor) if the user asked for them.
+    You are a PC building expert. Here is a PC build intended for {purpose}.
+    Explain the build in a friendly way to a non-technical user.
+
+    If the user did not request peripherals, do not suggest any peripherals or mention them in any way.
 
     Build:
     {build_text}
@@ -141,9 +149,8 @@ def call_openai_description(build, purpose, include_peripherals):
 
     Respond with:
     1. A short paragraph describing the build's strengths.
-    2. A list of peripherals (if any).
+    2. Only include a list of peripherals if requested.
     """
-
     response = client_openai.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -165,8 +172,10 @@ def get_recommendations(request: RecommendationRequest):
 
     try:
         products = list(collection.find({"price": {"$lte": request.budget}}))
-        print("Loaded", len(products), "products under £", request.budget)
         
+        # Debugging - delete after
+        print("Loaded", len(products), "products under £", request.budget)
+
         if not products:
             raise HTTPException(status_code=404, detail="No products found within budget")
 
