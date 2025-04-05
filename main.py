@@ -57,14 +57,10 @@ def is_compatible(build):
 
     if not all([cpu, motherboard, ram, psu]):
         return False
-
     if cpu.get("socket") != motherboard.get("socket"):
         return False
     if ram.get("ram_type") != motherboard.get("ram_type"):
         return False
-    # if psu.get("wattage", 0) < sum([c.get("wattage", 0) for c in build if c.get("wattage")]):
-        # return False
-
     return True
 
 def score_build(build, purpose):
@@ -77,14 +73,12 @@ def score_build(build, purpose):
         score += perf * weight
     return score
 
-def generate_best_build(products, budget, purpose, include_os=False, peripherals=[]):
+def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
     grouped = defaultdict(list)
     for p in products:
         grouped[p["type"]].append(p)
 
     optional_items = []
-    if include_os:
-        optional_items += [p for p in grouped["Operating System"]]
     for periph in peripherals:
         optional_items += [p for p in grouped[periph.capitalize()]]
 
@@ -111,13 +105,13 @@ def generate_best_build(products, budget, purpose, include_os=False, peripherals
             best_score = score
             best_build = build
 
-
-    # Debugging - delete after
+    # Debugging code for build generation
     if not best_build:
         print("No compatible build found. Debug info:")
         print("Budget:", budget)
         print("Purpose:", purpose)
         print("Components per category:", {k: len(v) for k, v in grouped.items()})
+        print("Operating system included:", include_os)
 
     return best_build
 
@@ -130,27 +124,37 @@ def format_build(build):
     lines.append(f"Total: £{total:.2f}")
     return "\n".join(lines)
 
-def call_openai_description(build, purpose, include_peripherals):
+def call_openai_description(build, purpose, selected_peripherals, include_os):
     component_lines = [f"{item['type']}: {item['name']} - £{item['price']}" for item in build]
     build_text = "\n".join(component_lines)
 
-    system_message = "You are a helpful PC building assistant. Only provide peripherals if the user explicitly requests them."
+    system_message = (
+        "You are a PC building assistant. Only suggest peripherals the user specifically requested. "
+        "If asked, recommend specific product models by name. Be concise and focused."
+    )
+
+    peripherals_text = ", ".join(selected_peripherals) if selected_peripherals else "None"
+    os_text = "requested" if include_os else "not requested"
 
     user_prompt = f"""
     You are a PC building expert. Here is a PC build intended for {purpose}.
     Explain the build in a friendly way to a non-technical user.
 
-    If the user did not request peripherals, do not suggest any peripherals or mention them in any way.
+    Only recommend peripherals that the user specifically asked for. Do not suggest unrequested items.
+    If the user requested an operating system, include one in the build.
 
     Build:
     {build_text}
 
-    User requested peripherals: {include_peripherals}
+    The user has {os_text} an operating system. Please recommend one if requested.
+    Requested peripherals: {peripherals_text}
 
     Respond with:
     1. A short paragraph describing the build's strengths.
-    2. Only include a list of peripherals if requested.
+    2. If peripherals were requested, suggest specific models for only those.
+    3. A recommended operating system if requested.
     """
+
     response = client_openai.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -172,8 +176,8 @@ def get_recommendations(request: RecommendationRequest):
 
     try:
         products = list(collection.find({"price": {"$lte": request.budget}}))
-        
-        # Debugging - delete after
+
+        # Debugging code for product loading
         print("Loaded", len(products), "products under £", request.budget)
 
         if not products:
@@ -193,7 +197,8 @@ def get_recommendations(request: RecommendationRequest):
         description = call_openai_description(
             build=best_build,
             purpose=request.purpose,
-            include_peripherals=bool(request.peripherals)
+            selected_peripherals=request.peripherals,
+            include_os=request.include_os
         )
 
         return {
