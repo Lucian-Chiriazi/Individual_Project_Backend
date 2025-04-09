@@ -42,9 +42,9 @@ class RecommendationRequest(BaseModel):
     peripherals: List[str] = []
 
 PURPOSE_WEIGHTS = {
-    "gaming": {"CPU": 0.3, "GPU": 0.5, "RAM": 0.1, "Storage": 0.1},
-    "editing": {"CPU": 0.4, "GPU": 0.2, "RAM": 0.2, "Storage": 0.2},
-    "general": {"CPU": 0.3, "GPU": 0.2, "RAM": 0.2, "Storage": 0.3},
+    "gaming": {"CPU": 0.3, "GPU": 0.7, "RAM": 0.1, "Storage": 0.1},
+    "editing": {"CPU": 0.7, "GPU": 0.2, "RAM": 0.2, "Storage": 0.2},
+    "general": {"CPU": 0.5, "GPU": 0.2, "RAM": 0.2, "Storage": 0.7},
 }
 
 REQUIRED_CATEGORIES = ["CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case"]
