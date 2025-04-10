@@ -162,14 +162,15 @@ def call_openai_description(build, purpose, selected_peripherals, include_os):
     )
 
     peripherals_text = ", ".join(selected_peripherals) if selected_peripherals else "None"
-    os_text = "requested" if include_os else "not requested"
+    os_text = "REQUESTED" if include_os else "NOT REQUESTED"
 
     user_prompt = f"""
     You are a PC building expert. Here is a PC build intended for {purpose}.
     Explain the build in a friendly way to a non-technical user.
 
     Only recommend peripherals that the user specifically asked for. Do not suggest unrequested items.
-    If the user requested an operating system, include one in the build.
+    Operating system: {os_text}
+    If it says REQUESTED, recommend a suitable OS like Windows 11 or Ubuntu.
 
     Build:
     {build_text}
@@ -217,8 +218,12 @@ def get_recommendations(request: RecommendationRequest):
             peripherals=request.peripherals
         )
 
+        # DEBUG information for OS
+        print("DEBUG: include_os =", request.include_os)
+        print("DEBUG: peripherals =", request.peripherals)
+
         if not best_build:
-            raise HTTPException(status_code=404, detail="No compatible build found")
+            raise HTTPException(status_code=404, detail="No compatible build found or missing category.")
 
         description = call_openai_description(
             build=best_build,
@@ -231,6 +236,10 @@ def get_recommendations(request: RecommendationRequest):
             "recommendation": format_build(best_build),
             "description": description
         }
+    
+    except HTTPException as http_exc:
+        print("HTTP Exception:", http_exc.detail)
+        raise http_exc
 
     except Exception as e:
         print("ERROR:", e)
