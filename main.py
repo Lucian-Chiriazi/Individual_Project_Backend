@@ -74,46 +74,56 @@ def score_build(build, purpose):
     return score
 
 def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
-    weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
+    from itertools import product
 
-    # Group products by type
+    weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
     grouped = defaultdict(list)
     for p in products:
         grouped[p["type"]].append(p)
 
-    # Handle optional peripherals
-    optional_items = []
-    for periph in peripherals:
-        optional_items += [p for p in grouped.get(periph.capitalize(), [])]
-
-    # Ensure all required categories have components
     for category in REQUIRED_CATEGORIES:
         if not grouped[category]:
             print(f"Missing category: {category}")
             return None
 
-    # Select top 3 components by performance (no budget filtering)
-    limited = {
-        cat: sorted(grouped[cat], key=lambda x: x["performance_score"], reverse=True)[:3]
-        for cat in REQUIRED_CATEGORIES
-    }
+    top_n = 5
+    extra_premium = 2
+    limited = {}
 
-    # Generate all build combinations
-    combos = product(*[limited[cat] for cat in REQUIRED_CATEGORIES])
+    for cat in REQUIRED_CATEGORIES:
+        components = grouped[cat]
+
+        # Best value (performance per pound)
+        value_sorted = sorted(
+            components,
+            key=lambda x: (x["performance_score"] * weights.get(cat, 0)) / max(x["price"], 1),
+            reverse=True
+        )[:top_n]
+
+        # High-end price-based options
+        high_price_sorted = sorted(
+            [c for c in components if c["price"] <= budget],
+            key=lambda x: x["price"],
+            reverse=True
+        )[:extra_premium]
+
+        # Combine and deduplicate
+        combined = {c["name"]: c for c in value_sorted + high_price_sorted}
+        limited[cat] = list(combined.values())
+
     best_score = -1
+    best_price = 0
     best_build = None
 
-    for combo in combos:
-        build = list(combo) + optional_items
+    for combo in product(*[limited[cat] for cat in REQUIRED_CATEGORIES]):
+        build = list(combo)
 
         if not is_compatible(build):
             continue
 
-        # Check total power usage and PSU headroom
         total_wattage = sum(comp.get("wattage", 0) for comp in build if comp["type"] != "PSU")
         psu = next((c for c in build if c["type"] == "PSU"), None)
-
-        if psu and psu.get("wattage", 0) < total_wattage * 1.2:  # 20% headroom
+        if psu and psu.get("wattage", 0) < total_wattage * 1.2:
             continue
 
         total_price = sum(p["price"] for p in build)
@@ -121,15 +131,15 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
             continue
 
         score = score_build(build, purpose)
-        if score > best_score:
+
+        if score > best_score or (score == best_score and total_price > best_price):
             best_score = score
+            best_price = total_price
             best_build = build
 
     if not best_build:
         print("No compatible build found.")
-        print("Budget:", budget)
-        print("Purpose:", purpose)
-        print("Operating system included:", include_os)
+        return None
 
     return best_build
 
