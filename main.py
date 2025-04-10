@@ -74,21 +74,31 @@ def score_build(build, purpose):
     return score
 
 def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
+    weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
+
+    # Group products by type
     grouped = defaultdict(list)
     for p in products:
         grouped[p["type"]].append(p)
 
+    # Handle optional peripherals
     optional_items = []
     for periph in peripherals:
-        optional_items += [p for p in grouped[periph.capitalize()]]
+        optional_items += [p for p in grouped.get(periph.capitalize(), [])]
 
+    # Ensure all required categories have components
     for category in REQUIRED_CATEGORIES:
         if not grouped[category]:
             print(f"Missing category: {category}")
             return None
 
-    limited = {cat: sorted(grouped[cat], key=lambda x: x["performance_score"], reverse=True)[:3] for cat in REQUIRED_CATEGORIES}
+    # Select top 3 components by performance
+    limited = {
+        cat: sorted(grouped[cat], key=lambda x: x["performance_score"], reverse=True)[:3]
+        for cat in REQUIRED_CATEGORIES
+    }
 
+    # Generate combinations and evaluate them
     combos = product(*[limited[cat] for cat in REQUIRED_CATEGORIES])
     best_score = -1
     best_build = None
