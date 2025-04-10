@@ -92,35 +92,43 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
             print(f"Missing category: {category}")
             return None
 
-    # Select top 3 components by performance
+    # Select top 3 components by performance (no budget filtering)
     limited = {
         cat: sorted(grouped[cat], key=lambda x: x["performance_score"], reverse=True)[:3]
         for cat in REQUIRED_CATEGORIES
     }
 
-    # Generate combinations and evaluate them
+    # Generate all build combinations
     combos = product(*[limited[cat] for cat in REQUIRED_CATEGORIES])
     best_score = -1
     best_build = None
 
     for combo in combos:
         build = list(combo) + optional_items
+
         if not is_compatible(build):
             continue
+
+        # Check total power usage and PSU headroom
+        total_wattage = sum(comp.get("wattage", 0) for comp in build if comp["type"] != "PSU")
+        psu = next((c for c in build if c["type"] == "PSU"), None)
+
+        if psu and psu.get("wattage", 0) < total_wattage * 1.2:  # 20% headroom
+            continue
+
         total_price = sum(p["price"] for p in build)
         if total_price > budget:
             continue
+
         score = score_build(build, purpose)
         if score > best_score:
             best_score = score
             best_build = build
 
-    # Debugging code for build generation
     if not best_build:
-        print("No compatible build found. Debug info:")
+        print("No compatible build found.")
         print("Budget:", budget)
         print("Purpose:", purpose)
-        print("Components per category:", {k: len(v) for k, v in grouped.items()})
         print("Operating system included:", include_os)
 
     return best_build
@@ -186,8 +194,6 @@ def get_recommendations(request: RecommendationRequest):
 
     try:
         products = list(collection.find({"price": {"$lte": request.budget}}))
-
-        # Debugging code for product loading
         print("Loaded", len(products), "products under £", request.budget)
 
         if not products:
