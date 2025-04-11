@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from mongomock import MongoClient as MockMongoClient
-from main import generate_best_build, PURPOSE_WEIGHTS, REQUIRED_CATEGORIES
-from collections import defaultdict
+from main import PURPOSE_WEIGHTS, REQUIRED_CATEGORIES
+
 
 import matplotlib.pyplot as plt
 
