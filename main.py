@@ -10,7 +10,7 @@ from itertools import product
 from collections import defaultdict
 
 # Load environment variables
-load_dotenv("/.env")
+load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -74,7 +74,6 @@ def score_build(build, purpose):
     return score
 
 def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
-    from itertools import product
 
     weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
     grouped = defaultdict(list)
@@ -107,7 +106,7 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
             reverse=True
         )[:extra_premium]
 
-        # Combine and deduplicate
+        # Combine and remove duplicates
         combined = {c["name"]: c for c in value_sorted + high_price_sorted}
         limited[cat] = list(combined.values())
 
