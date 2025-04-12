@@ -10,7 +10,7 @@ from itertools import product
 from collections import defaultdict
 
 # Load environment variables
-load_dotenv()
+load_dotenv("/.env")
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -26,7 +26,7 @@ collection = db["components"]
 # Create FastAPI app
 app = FastAPI()
 
-# Add CORS middleware
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://lucian-chiriazi.github.io", "http://localhost:3000"],
