@@ -7,6 +7,7 @@ from main import PURPOSE_WEIGHTS, REQUIRED_CATEGORIES
 
 import matplotlib.pyplot as plt
 
+# Initialize the FastAPI test client
 client = TestClient(app)
 
 # Extended mock data to allow real choice between low-end and high-end CPUs/GPUs
@@ -47,6 +48,7 @@ mock_products = [
     {"type": "Case", "name": "Premium Case", "price": 100, "performance_score": 70}
 ]
 
+# Mock MongoDB client
 @pytest.fixture
 def mock_db(monkeypatch):
     class MockCollection:
@@ -61,28 +63,32 @@ def mock_db(monkeypatch):
         def __getitem__(self, name):
             return MockDB()
 
+    # Replace the MongoDB client with the mock
     monkeypatch.setattr("main.client_mongodb", MockClient())
     monkeypatch.setattr("main.db", MockDB())
     monkeypatch.setattr("main.collection", MockCollection())
 
-# Helpers and logic verification
+# Helper functions and logic verification
 
+# Extract component line from the build string
 def extract_component(build, category):
     for line in build.split("\n"):
         if line.lower().startswith(category.lower()):
             return line
     return None
-
+# Extract the price value
 def extract_price(component_line):
     import re
     match = re.search(r"£(\d+(?:\.\d{1,2})?)", component_line)
     return float(match.group(1)) if match else 0.0
 
+# Test root endpoint 
 def test_home():
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["message"].startswith("Connected")
 
+# Test successful build generation
 def test_successful_build(mock_db):
     response = client.post("/recommend", json={
         "budget": 1200,
@@ -97,6 +103,7 @@ def test_successful_build(mock_db):
     assert "CPU" in data["recommendation"]
     assert "GPU" in data["recommendation"]
 
+# Test missing category - returns 404
 def test_missing_category(mock_db, monkeypatch):
     monkeypatch.setattr("main.collection.find", lambda q: [p for p in mock_products if p["type"] != "GPU"])
     response = client.post("/recommend", json={
@@ -107,6 +114,7 @@ def test_missing_category(mock_db, monkeypatch):
     })
     assert response.status_code == 404
 
+# Test invalid budget - returns 400
 def test_invalid_budget():
     response = client.post("/recommend", json={
         "budget": 300,
@@ -117,6 +125,7 @@ def test_invalid_budget():
     assert response.status_code == 400
     assert "Budget must be between" in response.json()["detail"]
 
+# Test GPU prioritization in gaming builds
 def test_gaming_prioritizes_gpu(mock_db):
     response = client.post("/recommend", json={
         "budget": 1500,
@@ -132,6 +141,7 @@ def test_gaming_prioritizes_gpu(mock_db):
     gpu_price = extract_price(gpu_line)
     assert gpu_price >= cpu_price, "GPU should be prioritized in gaming builds"
 
+# Test CPU prioritization in editing builds
 def test_editing_prioritizes_cpu(mock_db):
     response = client.post("/recommend", json={
         "budget": 1500,
@@ -148,6 +158,7 @@ def test_editing_prioritizes_cpu(mock_db):
     gpu_price = extract_price(gpu_line)
     assert cpu_price >= gpu_price, "CPU should be prioritized in editing builds"
 
+# Test budget utilization - at least 85% of the budget should be used
 def test_budget_utilization(mock_db):
     budget = 1500
     response = client.post("/recommend", json={
@@ -163,6 +174,7 @@ def test_budget_utilization(mock_db):
     total_price = extract_price(total_line[0])
     assert total_price >= 0.85 * budget, "Build should use at least 85% of the available budget"
 
+# Test socket compatibility between CPU and Motherboard
 def test_socket_compatibility(mock_db):
     response = client.post("/recommend", json={
         "budget": 1500,
@@ -184,6 +196,7 @@ def test_socket_compatibility(mock_db):
     assert cpu and mb, "CPU or Motherboard not found in mock data"
     assert cpu["socket"] == mb["socket"], f"Sockets do not match: {cpu['socket']} vs {mb['socket']}"
 
+# Test PSU wattage sufficiency
 def test_psu_wattage_sufficiency(mock_db):
     response = client.post("/recommend", json={
         "budget": 1500,
@@ -203,7 +216,7 @@ def test_psu_wattage_sufficiency(mock_db):
             name = rest.split("-")[0].strip()
             selected[ctype.strip()] = name
 
-    # Find PSU and other components in mock data
+    # calculate total wattage
     total_wattage = 0
     psu_wattage = 0
 

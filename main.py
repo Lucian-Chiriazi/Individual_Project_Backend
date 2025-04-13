@@ -26,7 +26,7 @@ collection = db["components"]
 # Create FastAPI app
 app = FastAPI()
 
-# CORS middleware
+# Enable CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://lucian-chiriazi.github.io", "http://localhost:3000"],
@@ -34,27 +34,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# Data model for incoming requests
 class RecommendationRequest(BaseModel):
     budget: float
     purpose: str
     include_os: bool = False
     peripherals: List[str] = []
 
+# Purpose-based weights for scoring
 PURPOSE_WEIGHTS = {
-    "gaming": {"CPU": 0.3, "GPU": 0.7, "RAM": 0.1, "Storage": 0.1},
+    "gaming": {"CPU": 0.4, "GPU": 0.7, "RAM": 0.3, "Storage": 0.3},
     "editing": {"CPU": 0.7, "GPU": 0.2, "RAM": 0.2, "Storage": 0.2},
     "general": {"CPU": 0.5, "GPU": 0.2, "RAM": 0.2, "Storage": 0.7},
 }
 
+# Required categories for a complete build
 REQUIRED_CATEGORIES = ["CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case"]
 
+# Function to check compatibility of components
 def is_compatible(build):
     cpu = next((c for c in build if c['type'] == "CPU"), None)
     motherboard = next((c for c in build if c['type'] == "Motherboard"), None)
     ram = next((c for c in build if c['type'] == "RAM"), None)
     psu = next((c for c in build if c['type'] == "PSU"), None)
 
+    # Check if all required components are present and compatible
     if not all([cpu, motherboard, ram, psu]):
         return False
     if cpu.get("socket") != motherboard.get("socket"):
@@ -63,6 +67,7 @@ def is_compatible(build):
         return False
     return True
 
+# Function to score the build based on weighted performance
 def score_build(build, purpose):
     weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
     score = 0.0
@@ -73,26 +78,30 @@ def score_build(build, purpose):
         score += perf * weight
     return score
 
+# Function to generate the best build within budget and purpose
 def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
-
     weights = PURPOSE_WEIGHTS.get(purpose.lower(), PURPOSE_WEIGHTS["general"])
+
+    # Group products by type
     grouped = defaultdict(list)
     for p in products:
         grouped[p["type"]].append(p)
 
+    # Ensure all required categories have options
     for category in REQUIRED_CATEGORIES:
         if not grouped[category]:
             print(f"Missing category: {category}")
             return None
 
-    top_n = 5
-    extra_premium = 2
+    top_n = 5 # Number of top components to consider for each category
+    extra_premium = 2 # Number of high-end components to consider for each category
     limited = {}
 
+    # Filter and combine value/performance and high-end options
     for cat in REQUIRED_CATEGORIES:
         components = grouped[cat]
 
-        # Best value (performance per pound)
+        # Sort by performance per pound
         value_sorted = sorted(
             components,
             key=lambda x: (x["performance_score"] * weights.get(cat, 0)) / max(x["price"], 1),
@@ -114,12 +123,15 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
     best_price = 0
     best_build = None
 
+    # Generate all combinations of components from limited options
     for combo in product(*[limited[cat] for cat in REQUIRED_CATEGORIES]):
         build = list(combo)
 
+        # Skip if not compatible
         if not is_compatible(build):
             continue
-
+            
+        # Ensure PSU wattage is sufficient
         total_wattage = sum(comp.get("wattage", 0) for comp in build if comp["type"] != "PSU")
         psu = next((c for c in build if c["type"] == "PSU"), None)
         if psu and psu.get("wattage", 0) < total_wattage * 1.2:
@@ -131,6 +143,7 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
 
         score = score_build(build, purpose)
 
+        # Keep the highest scoring build or the one that uses most of the budget
         if score > best_score or (score == best_score and total_price > best_price):
             best_score = score
             best_price = total_price
@@ -142,6 +155,7 @@ def generate_best_build(products, budget, purpose, include_os, peripherals=[]):
 
     return best_build
 
+# Formats the build list into readable string
 def format_build(build):
     lines = []
     total = 0
@@ -150,19 +164,23 @@ def format_build(build):
         total += comp["price"]
     lines.append(f"Total: £{total:.2f}")
     return "\n".join(lines)
-
+ 
+# Calls OpenAI API to get a description of the build and suggest peripherals
 def call_openai_description(build, purpose, selected_peripherals, include_os):
     component_lines = [f"{item['type']}: {item['name']} - £{item['price']}" for item in build]
     build_text = "\n".join(component_lines)
 
+    # System prompt: restricts GPT behavior
     system_message = (
         "You are a PC building assistant. Only suggest peripherals the user specifically requested. "
         "If asked, recommend specific product models by name. Be concise and focused."
     )
 
+    #Format inputs into a string for OpenAI
     peripherals_text = ", ".join(selected_peripherals) if selected_peripherals else "None"
     os_text = "REQUESTED" if include_os else "NOT REQUESTED"
 
+    # User prompt: the main question to OpenAI
     user_prompt = f"""
     You are a PC building expert. Here is a PC build intended for {purpose}.
     Explain the build in a friendly way to a non-technical user.
@@ -182,7 +200,7 @@ def call_openai_description(build, purpose, selected_peripherals, include_os):
     2. If peripherals were requested, suggest specific models for only those.
     3. A recommended operating system if requested.
     """
-
+    # Call OpenAI API
     response = client_openai.chat.completions.create(
         model="gpt-4",
         messages=[
@@ -193,22 +211,26 @@ def call_openai_description(build, purpose, selected_peripherals, include_os):
 
     return response.choices[0].message.content.strip()
 
+# Root endpoint for testing
 @app.get("/")
 def home():
     return {"message": "Connected to MongoDB and OpenAI GPT!"}
 
+# Main POST endpoint for recommendations
 @app.post("/recommend")
 def get_recommendations(request: RecommendationRequest):
     if request.budget < 500 or request.budget > 10000:
         raise HTTPException(status_code=400, detail="Budget must be between £500 and £10,000")
 
     try:
+        # Load products from MongoDB based on budget
         products = list(collection.find({"price": {"$lte": request.budget}}))
         print("Loaded", len(products), "products under £", request.budget)
 
         if not products:
             raise HTTPException(status_code=404, detail="No products found within budget")
 
+        # Generate best build from filtered products
         best_build = generate_best_build(
             products,
             budget=request.budget,
@@ -217,13 +239,14 @@ def get_recommendations(request: RecommendationRequest):
             peripherals=request.peripherals
         )
 
-        # DEBUG information for OS
+        # DEBUG information for OS and peripherals
         print("DEBUG: include_os =", request.include_os)
         print("DEBUG: peripherals =", request.peripherals)
 
         if not best_build:
             raise HTTPException(status_code=404, detail="No compatible build found or missing category.")
 
+        # Generate description using OpenAI
         description = call_openai_description(
             build=best_build,
             purpose=request.purpose,
@@ -231,6 +254,7 @@ def get_recommendations(request: RecommendationRequest):
             include_os=request.include_os
         )
 
+        # Return the formatted build and description
         return {
             "recommendation": format_build(best_build),
             "description": description
